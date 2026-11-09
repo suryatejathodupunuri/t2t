@@ -1,7 +1,8 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "tablelens.workspace.v1";
+  const STORAGE_KEY = "table2table.workspace.v1";
+  const LEGACY_STORAGE_KEY = "tablelens.workspace.v1";
   const STORAGE_VERSION = 1;
 
   const SAMPLE_SOURCE = {
@@ -51,7 +52,9 @@
     target: null,
     annotations: [],
     activeTableIndex: 0,
-    pendingSelection: null
+    pendingSelection: null,
+    tableFontSize: 12,
+    splitPercent: 50
   };
 
   const pendingFiles = { source: null, target: null };
@@ -64,14 +67,14 @@
 
   function init() {
     [
-      "saveStatus", "saveStatusText", "changeFilesButton", "saveAllButton", "emptyState",
-      "openUploadButton", "loadSampleButton", "workspace", "sourceFileName", "targetFileName",
-      "tableCount", "annotationCount", "tableTabs", "sourceTableTitle", "targetTableTitle",
-      "sourceRowCount", "targetRowCount", "sourceTableContainer", "targetTableContainer",
-      "selectionText", "selectionLocation", "categorySelect", "addAnnotationButton",
-      "clearAnnotationsButton", "annotationList", "uploadDialog", "uploadForm", "sourceFileInput",
-      "targetFileInput", "sourceDropzone", "targetDropzone", "sourceDropTitle", "targetDropTitle",
-      "sourceDropMeta", "targetDropMeta", "dialogError", "loadFilesButton", "toast"
+      "saveStatus", "saveStatusText", "changeFilesButton", "clearSessionButton", "saveAllButton",
+      "emptyState", "loadSampleButton", "workspace", "backToWorkspaceButton", "annotationCount",
+      "tableTabs", "sourceTableTitle", "targetTableTitle", "sourceRowCount", "targetRowCount",
+      "sourceTableContainer", "targetTableContainer", "selectionText", "selectionLocation",
+      "categorySelect", "addAnnotationButton", "clearAnnotationsButton", "annotationList",
+      "uploadForm", "sourceFileInput", "targetFileInput", "sourceDropzone", "targetDropzone",
+      "sourceDropTitle", "targetDropTitle", "sourceDropMeta", "targetDropMeta", "dialogError",
+      "loadFilesButton", "fontSizeOptions", "comparisonGrid", "tableSplitter", "toast"
     ].forEach((id) => { dom[id] = document.getElementById(id); });
 
     bindEvents();
@@ -79,8 +82,9 @@
   }
 
   function bindEvents() {
-    dom.openUploadButton.addEventListener("click", openUploadDialog);
-    dom.changeFilesButton.addEventListener("click", openUploadDialog);
+    dom.changeFilesButton.addEventListener("click", showUploadScreen);
+    dom.clearSessionButton.addEventListener("click", clearSession);
+    dom.backToWorkspaceButton.addEventListener("click", renderWorkspace);
     dom.loadSampleButton.addEventListener("click", loadSampleWorkspace);
     dom.saveAllButton.addEventListener("click", downloadAnnotations);
     dom.addAnnotationButton.addEventListener("click", addAnnotation);
@@ -89,9 +93,14 @@
     dom.uploadForm.addEventListener("submit", handleUploadSubmit);
     dom.sourceFileInput.addEventListener("change", (event) => setPendingFile("source", event.target.files[0]));
     dom.targetFileInput.addEventListener("change", (event) => setPendingFile("target", event.target.files[0]));
+    dom.fontSizeOptions.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-size]");
+      if (button) setTableFontSize(Number(button.dataset.size));
+    });
 
     setupDropzone(dom.sourceDropzone, "source");
     setupDropzone(dom.targetDropzone, "target");
+    setupSplitter();
 
     [dom.sourceTableContainer, dom.targetTableContainer].forEach((container) => {
       container.addEventListener("mouseup", () => window.setTimeout(captureSelection, 0));
@@ -126,7 +135,16 @@
     });
   }
 
-  function openUploadDialog() {
+  function showUploadScreen() {
+    resetUploadForm();
+    dom.emptyState.hidden = false;
+    dom.workspace.hidden = true;
+    dom.saveAllButton.disabled = true;
+    dom.changeFilesButton.hidden = true;
+    dom.backToWorkspaceButton.hidden = !(state.source && state.target);
+  }
+
+  function resetUploadForm() {
     pendingFiles.source = null;
     pendingFiles.target = null;
     dom.sourceFileInput.value = "";
@@ -137,7 +155,6 @@
     dom.targetDropMeta.textContent = "Click to browse or drop a file";
     dom.dialogError.textContent = "";
     dom.loadFilesButton.disabled = true;
-    dom.uploadDialog.showModal();
   }
 
   function setPendingFile(side, file) {
@@ -155,10 +172,6 @@
 
   async function handleUploadSubmit(event) {
     event.preventDefault();
-    if (event.submitter?.value === "cancel") {
-      dom.uploadDialog.close();
-      return;
-    }
     if (!pendingFiles.source || !pendingFiles.target) return;
 
     dom.loadFilesButton.disabled = true;
@@ -174,14 +187,13 @@
       const source = normalizeDocument(sourceRaw, pendingFiles.source.name);
       const target = normalizeDocument(targetRaw, pendingFiles.target.name);
       startWorkspace(source, target, true);
-      dom.uploadDialog.close();
       showToast("Files loaded. Your work will autosave in this browser.");
     } catch (error) {
       dom.dialogError.textContent = error instanceof SyntaxError
         ? "One of the files contains invalid JSON. Please check it and try again."
         : error.message;
     } finally {
-      dom.loadFilesButton.textContent = "Open workspace";
+      dom.loadFilesButton.textContent = "Open uploaded tables";
       dom.loadFilesButton.disabled = !(pendingFiles.source && pendingFiles.target);
     }
   }
@@ -319,23 +331,22 @@
   }
 
   function renderEmptyState() {
-    dom.emptyState.hidden = false;
-    dom.workspace.hidden = true;
-    dom.saveAllButton.disabled = true;
-    dom.changeFilesButton.hidden = true;
+    showUploadScreen();
   }
 
   function renderWorkspace() {
+    if (!state.source || !state.target) {
+      renderEmptyState();
+      return;
+    }
     dom.emptyState.hidden = true;
     dom.workspace.hidden = false;
     dom.saveAllButton.disabled = false;
     dom.changeFilesButton.hidden = false;
-    dom.sourceFileName.textContent = state.source.fileName;
-    dom.targetFileName.textContent = state.target.fileName;
+    applyWorkspacePreferences();
 
     const pairCount = Math.max(state.source.tables.length, state.target.tables.length);
     if (state.activeTableIndex >= pairCount) state.activeTableIndex = 0;
-    dom.tableCount.textContent = pairCount;
     renderTabs(pairCount);
     renderActiveTables();
     renderAnnotationList();
@@ -684,7 +695,9 @@
           source: state.source,
           target: state.target,
           annotations: state.annotations,
-          activeTableIndex: state.activeTableIndex
+          activeTableIndex: state.activeTableIndex,
+          tableFontSize: state.tableFontSize,
+          splitPercent: state.splitPercent
         }));
         dom.saveStatus.classList.remove("saving");
         dom.saveStatusText.textContent = "Saved locally";
@@ -701,20 +714,114 @@
 
   function restoreWorkspace() {
     try {
-      const cached = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      const currentCache = localStorage.getItem(STORAGE_KEY);
+      const cached = JSON.parse(currentCache || localStorage.getItem(LEGACY_STORAGE_KEY));
       if (!cached || cached.version !== STORAGE_VERSION || !cached.source || !cached.target) return false;
       state.source = cached.source;
       state.target = cached.target;
       state.annotations = Array.isArray(cached.annotations) ? cached.annotations : [];
       state.activeTableIndex = Number.isInteger(cached.activeTableIndex) ? cached.activeTableIndex : 0;
+      state.tableFontSize = [10, 12, 14, 16, 20].includes(cached.tableFontSize) ? cached.tableFontSize : 12;
+      state.splitPercent = Number.isFinite(cached.splitPercent) ? cached.splitPercent : 50;
       renderWorkspace();
+      if (!currentCache) {
+        persistWorkspace(true);
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+      }
       dom.saveStatusText.textContent = "Restored from browser";
       showToast("Previous workspace restored.");
       return true;
     } catch (_error) {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
       return false;
     }
+  }
+
+  function applyWorkspacePreferences() {
+    setTableFontSize(state.tableFontSize, false);
+    setSplitPercent(state.splitPercent, false);
+  }
+
+  function setTableFontSize(value, shouldPersist = true) {
+    const allowedSizes = [10, 12, 14, 16, 20];
+    const size = allowedSizes.includes(value) ? value : 12;
+    state.tableFontSize = size;
+    dom.workspace.style.setProperty("--table-font-size", `${size}px`);
+    dom.fontSizeOptions.querySelectorAll("button[data-size]").forEach((button) => {
+      button.classList.toggle("active", Number(button.dataset.size) === size);
+    });
+    if (shouldPersist) persistWorkspace();
+  }
+
+  function setupSplitter() {
+    let dragging = false;
+
+    dom.tableSplitter.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      dragging = true;
+      document.body.classList.add("is-resizing");
+      dom.tableSplitter.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+
+    dom.tableSplitter.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      const bounds = dom.comparisonGrid.getBoundingClientRect();
+      const percent = ((event.clientX - bounds.left) / bounds.width) * 100;
+      setSplitPercent(percent, false);
+    });
+
+    const stopDragging = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("is-resizing");
+      if (dom.tableSplitter.hasPointerCapture(event.pointerId)) {
+        dom.tableSplitter.releasePointerCapture(event.pointerId);
+      }
+      persistWorkspace();
+    };
+
+    dom.tableSplitter.addEventListener("pointerup", stopDragging);
+    dom.tableSplitter.addEventListener("pointercancel", stopDragging);
+    dom.tableSplitter.addEventListener("dblclick", () => setSplitPercent(50));
+    dom.tableSplitter.addEventListener("keydown", (event) => {
+      let next = state.splitPercent;
+      if (event.key === "ArrowLeft") next -= 2;
+      else if (event.key === "ArrowRight") next += 2;
+      else if (event.key === "Home") next = 20;
+      else if (event.key === "End") next = 80;
+      else if (event.key === "0") next = 50;
+      else return;
+      event.preventDefault();
+      setSplitPercent(next);
+    });
+  }
+
+  function setSplitPercent(value, shouldPersist = true) {
+    const percent = Math.round(Math.min(80, Math.max(20, Number(value) || 50)));
+    state.splitPercent = percent;
+    dom.comparisonGrid.style.gridTemplateColumns = `${percent}fr 9px ${100 - percent}fr`;
+    dom.tableSplitter.setAttribute("aria-valuenow", percent);
+    if (shouldPersist) persistWorkspace();
+  }
+
+  function clearSession() {
+    if (state.source && !window.confirm("Clear the current files, annotations, and saved browser session?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    state.source = null;
+    state.target = null;
+    state.annotations = [];
+    state.activeTableIndex = 0;
+    state.pendingSelection = null;
+    state.tableFontSize = 12;
+    state.splitPercent = 50;
+    resetPendingSelection();
+    renderEmptyState();
+    dom.saveStatus.classList.remove("saving");
+    dom.saveStatusText.textContent = "No active session";
+    showToast("Browser session cleared.");
   }
 
   function formatSelectionLocation(selection) {

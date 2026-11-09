@@ -7,96 +7,100 @@
       name="description"
       content="Compare source and target tables, annotate text spans, and export structured JSON."
     />
-    <title>TableLens — Table Annotation</title>
+    <title>Table2Table Translation</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="#" aria-label="TableLens home">
-          <span class="brand-mark" aria-hidden="true">
-            <span></span><span></span><span></span><span></span>
-          </span>
-          <span>
-            <strong>TableLens</strong>
-            <small>Table annotation workspace</small>
-          </span>
+        <a class="brand" href="#" aria-label="Table2Table Translation home">
+          Table2Table Translation
         </a>
 
-        <div class="topbar-actions">
+        <nav class="topbar-actions" aria-label="Workspace actions">
           <span class="save-status" id="saveStatus" role="status">
             <span class="status-dot"></span>
             <span id="saveStatusText">Saved locally</span>
           </span>
-          <button class="button button-ghost" id="changeFilesButton" type="button">
-            Change files
-          </button>
+          <a
+            class="nav-link"
+            href="https://docs.google.com/document/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >Guidelines</a>
+          <button class="nav-link button-link" id="clearSessionButton" type="button">Clear session</button>
+          <button class="button button-ghost" id="changeFilesButton" type="button" hidden>Change files</button>
           <button class="button button-primary" id="saveAllButton" type="button" disabled>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14" /></svg>
             Save all
           </button>
-        </div>
+        </nav>
       </header>
 
       <main>
-        <section class="empty-state" id="emptyState">
-          <div class="eyebrow">LOCAL-FIRST ANNOTATION</div>
-          <h1>Compare tables.<br /><em>Mark what matters.</em></h1>
-          <p class="empty-copy">
-            Upload a source and target JSON. Select any text span, assign an error category,
-            and export precise row-and-column annotations.
-          </p>
+        <section class="upload-screen" id="emptyState">
+          <form class="upload-card" id="uploadForm">
+            <div class="upload-heading">
+              <div>
+                <span class="step-label">START A SESSION</span>
+                <h1>Upload table JSON files</h1>
+                <p>Select a source and target file. Your data stays in this browser.</p>
+              </div>
+              <button class="text-button" id="backToWorkspaceButton" type="button" hidden>
+                Back to workspace
+              </button>
+            </div>
 
-          <div class="start-options">
-            <button class="start-card" id="openUploadButton" type="button">
-              <span class="start-icon upload-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v4h14v-4" /></svg>
-              </span>
-              <span>
-                <strong>Upload JSON files</strong>
-                <small>Choose your source and target tables</small>
-              </span>
-              <span class="arrow" aria-hidden="true">↗</span>
-            </button>
+            <div class="dropzone-grid">
+              <label class="dropzone" id="sourceDropzone">
+                <input type="file" id="sourceFileInput" accept=".json,application/json" />
+                <span class="drop-badge">01 · SOURCE JSON</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v4h14v-4" /></svg>
+                <strong id="sourceDropTitle">Choose source JSON</strong>
+                <small id="sourceDropMeta">Click to browse or drop a file</small>
+              </label>
+              <label class="dropzone" id="targetDropzone">
+                <input type="file" id="targetFileInput" accept=".json,application/json" />
+                <span class="drop-badge">02 · TARGET JSON</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v4h14v-4" /></svg>
+                <strong id="targetDropTitle">Choose target JSON</strong>
+                <small id="targetDropMeta">Click to browse or drop a file</small>
+              </label>
+            </div>
 
-            <button class="start-card" id="loadSampleButton" type="button">
-              <span class="start-icon sample-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M6 5h12v14H6zM9 9h6M9 13h6M9 17h3" /></svg>
-              </span>
-              <span>
-                <strong>Explore a sample</strong>
-                <small>Load two ready-made example files</small>
-              </span>
-              <span class="arrow" aria-hidden="true">↗</span>
-            </button>
-          </div>
-
-          <p class="privacy-note">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0110 0v2m-11 0h12v10H6z" /></svg>
-            Your files and annotations stay in this browser.
-          </p>
+            <p class="form-error" id="dialogError" role="alert"></p>
+            <div class="upload-actions">
+              <button class="button button-primary" id="loadFilesButton" type="submit" disabled>
+                Open uploaded tables
+              </button>
+              <span class="or-divider">or</span>
+              <button class="button button-ghost" id="loadSampleButton" type="button">
+                Proceed with samples
+              </button>
+            </div>
+          </form>
         </section>
 
         <section class="workspace" id="workspace" hidden>
-          <div class="workspace-bar">
-            <div class="file-pair" aria-label="Loaded files">
-              <span class="file-chip source"><span>S</span><b id="sourceFileName">source.json</b></span>
-              <span class="pair-arrow" aria-hidden="true">→</span>
-              <span class="file-chip target"><span>T</span><b id="targetFileName">target.json</b></span>
-            </div>
-            <div class="workspace-summary">
-              <span><b id="tableCount">0</b> table pairs</span>
-              <span><b id="annotationCount">0</b> annotations</span>
+          <div class="table-toolbar">
+            <nav class="table-tabs" id="tableTabs" aria-label="Table pairs"></nav>
+            <div class="font-controls" aria-label="Table text size">
+              <span>Table size</span>
+              <div class="size-options" id="fontSizeOptions">
+                <button type="button" data-size="10">10</button>
+                <button type="button" data-size="12" class="active">12</button>
+                <button type="button" data-size="14">14</button>
+                <button type="button" data-size="16">16</button>
+                <button type="button" data-size="20">20</button>
+              </div>
             </div>
           </div>
 
-          <nav class="table-tabs" id="tableTabs" aria-label="Table pairs"></nav>
-
-          <div class="comparison-grid">
+          <div class="comparison-grid" id="comparisonGrid">
             <section class="table-panel source-panel">
               <div class="panel-heading">
-                <div>
-                  <span class="panel-label source-label">SOURCE</span>
+                <div class="panel-title">
+                  <span class="panel-label">SOURCE</span>
                   <h2 id="sourceTableTitle">Source table</h2>
                 </div>
                 <span class="row-count" id="sourceRowCount">0 rows</span>
@@ -104,10 +108,23 @@
               <div class="table-scroll" id="sourceTableContainer"></div>
             </section>
 
+            <div
+              class="splitter"
+              id="tableSplitter"
+              role="separator"
+              aria-label="Resize source and target tables"
+              aria-orientation="vertical"
+              aria-valuemin="20"
+              aria-valuemax="80"
+              aria-valuenow="50"
+              tabindex="0"
+              title="Drag to resize; double-click to reset"
+            ><span></span></div>
+
             <section class="table-panel target-panel">
               <div class="panel-heading">
-                <div>
-                  <span class="panel-label target-label">TARGET</span>
+                <div class="panel-title">
+                  <span class="panel-label">TARGET</span>
                   <h2 id="targetTableTitle">Target table</h2>
                 </div>
                 <span class="row-count" id="targetRowCount">0 rows</span>
@@ -136,19 +153,16 @@
                 <option value="Other">Other</option>
               </select>
             </div>
-            <button class="button button-accent" id="addAnnotationButton" type="button" disabled>
+            <button class="button button-primary" id="addAnnotationButton" type="button" disabled>
               Add annotation
             </button>
           </aside>
 
           <section class="annotation-log">
             <div class="log-heading">
-              <div>
-                <span class="eyebrow">ANNOTATION LOG</span>
-                <h2>Marked errors</h2>
-              </div>
+              <h2>Annotations <span id="annotationCount">0</span></h2>
               <button class="text-button danger" id="clearAnnotationsButton" type="button" hidden>
-                Clear all
+                Clear annotations
               </button>
             </div>
             <div id="annotationList" class="annotation-list"></div>
@@ -157,42 +171,7 @@
       </main>
     </div>
 
-    <dialog class="upload-dialog" id="uploadDialog">
-      <form method="dialog" class="dialog-card" id="uploadForm">
-        <button class="dialog-close" value="cancel" aria-label="Close upload dialog" type="submit">×</button>
-        <span class="eyebrow">NEW WORKSPACE</span>
-        <h2>Load your table pair</h2>
-        <p>Each file may contain one table or a collection of named tables.</p>
-
-        <div class="dropzone-grid">
-          <label class="dropzone" id="sourceDropzone">
-            <input type="file" id="sourceFileInput" accept=".json,application/json" />
-            <span class="drop-badge source">01 · SOURCE</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v4h14v-4" /></svg>
-            <strong id="sourceDropTitle">Choose source JSON</strong>
-            <small id="sourceDropMeta">Click to browse or drop a file</small>
-          </label>
-          <label class="dropzone" id="targetDropzone">
-            <input type="file" id="targetFileInput" accept=".json,application/json" />
-            <span class="drop-badge target">02 · TARGET</span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v4h14v-4" /></svg>
-            <strong id="targetDropTitle">Choose target JSON</strong>
-            <small id="targetDropMeta">Click to browse or drop a file</small>
-          </label>
-        </div>
-
-        <p class="dialog-error" id="dialogError" role="alert"></p>
-        <div class="dialog-actions">
-          <button class="button button-ghost" value="cancel" type="submit">Cancel</button>
-          <button class="button button-primary" id="loadFilesButton" value="default" type="submit" disabled>
-            Open workspace
-          </button>
-        </div>
-      </form>
-    </dialog>
-
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
     <script src="app.js"></script>
   </body>
 </html>
