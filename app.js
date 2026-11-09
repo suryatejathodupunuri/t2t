@@ -4,6 +4,9 @@
   const STORAGE_KEY = "table2table.workspace.v1";
   const LEGACY_STORAGE_KEY = "tablelens.workspace.v1";
   const STORAGE_VERSION = 1;
+  const APP_CONFIG = {
+    enableSourceEditing: false
+  };
 
   const SAMPLE_SOURCE = {
     tables: [
@@ -51,6 +54,7 @@
     source: null,
     target: null,
     annotations: [],
+    savedTables: {},
     activeTableIndex: 0,
     pendingSelection: null,
     tableFontSize: 12,
@@ -67,12 +71,14 @@
 
   function init() {
     [
-      "saveStatus", "saveStatusText", "changeFilesButton", "clearSessionButton", "saveAllButton",
-      "emptyState", "loadSampleButton", "workspace", "backToWorkspaceButton", "annotationCount",
-      "tableTabs", "sourceTableTitle", "targetTableTitle", "sourceRowCount", "targetRowCount",
-      "sourceTableContainer", "targetTableContainer", "selectionText", "selectionLocation",
-      "categorySelect", "addAnnotationButton", "clearAnnotationsButton", "annotationList",
-      "uploadForm", "sourceFileInput", "targetFileInput", "sourceDropzone", "targetDropzone",
+      "clearSessionButton", "saveTableButton", "downloadAllButton", "emptyState", "loadSampleButton",
+      "workspace", "annotationCount", "annotationTableLabel", "tableTabs", "previousTableButton",
+      "currentTableLabel", "nextTableButton", "reviewProgressLabel", "findUnsavedButton",
+      "sourcePanelLabel", "sourceTableTitle",
+      "targetTableTitle", "sourceRowCount", "targetRowCount", "sourceTableContainer",
+      "targetTableContainer", "selectionText", "selectionLocation", "categorySelect",
+      "addAnnotationButton", "clearAnnotationsButton", "annotationList", "uploadForm",
+      "sourceFileInput", "targetFileInput", "sourceDropzone", "targetDropzone",
       "sourceDropTitle", "targetDropTitle", "sourceDropMeta", "targetDropMeta", "dialogError",
       "loadFilesButton", "fontSizeOptions", "comparisonGrid", "tableSplitter", "toast"
     ].forEach((id) => { dom[id] = document.getElementById(id); });
@@ -82,11 +88,13 @@
   }
 
   function bindEvents() {
-    dom.changeFilesButton.addEventListener("click", showUploadScreen);
     dom.clearSessionButton.addEventListener("click", clearSession);
-    dom.backToWorkspaceButton.addEventListener("click", renderWorkspace);
+    dom.saveTableButton.addEventListener("click", saveCurrentTable);
+    dom.downloadAllButton.addEventListener("click", downloadAnnotations);
+    dom.previousTableButton.addEventListener("click", () => goToTable(state.activeTableIndex - 1));
+    dom.nextTableButton.addEventListener("click", () => goToTable(state.activeTableIndex + 1));
+    dom.findUnsavedButton.addEventListener("click", goToNextUnsavedTable);
     dom.loadSampleButton.addEventListener("click", loadSampleWorkspace);
-    dom.saveAllButton.addEventListener("click", downloadAnnotations);
     dom.addAnnotationButton.addEventListener("click", addAnnotation);
     dom.categorySelect.addEventListener("change", updateAddButton);
     dom.clearAnnotationsButton.addEventListener("click", clearAnnotations);
@@ -102,7 +110,9 @@
     setupDropzone(dom.targetDropzone, "target");
     setupSplitter();
 
-    [dom.sourceTableContainer, dom.targetTableContainer].forEach((container) => {
+    const selectionContainers = [dom.targetTableContainer];
+    if (APP_CONFIG.enableSourceEditing) selectionContainers.push(dom.sourceTableContainer);
+    selectionContainers.forEach((container) => {
       container.addEventListener("mouseup", () => window.setTimeout(captureSelection, 0));
       container.addEventListener("keyup", () => window.setTimeout(captureSelection, 0));
     });
@@ -110,7 +120,7 @@
     document.addEventListener("keydown", (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (state.source && state.target) downloadAnnotations();
+        if (state.source && state.target) saveCurrentTable();
       }
       if (event.key === "Escape" && state.pendingSelection) resetPendingSelection();
     });
@@ -139,9 +149,9 @@
     resetUploadForm();
     dom.emptyState.hidden = false;
     dom.workspace.hidden = true;
-    dom.saveAllButton.disabled = true;
-    dom.changeFilesButton.hidden = true;
-    dom.backToWorkspaceButton.hidden = !(state.source && state.target);
+    dom.saveTableButton.textContent = "Save table";
+    dom.saveTableButton.disabled = true;
+    dom.downloadAllButton.disabled = true;
   }
 
   function resetUploadForm() {
@@ -227,6 +237,7 @@
     state.target = target;
     state.activeTableIndex = 0;
     state.pendingSelection = null;
+    state.savedTables = {};
     if (clearExistingAnnotations) state.annotations = [];
     renderWorkspace();
     persistWorkspace(true);
@@ -341,11 +352,9 @@
     }
     dom.emptyState.hidden = true;
     dom.workspace.hidden = false;
-    dom.saveAllButton.disabled = false;
-    dom.changeFilesButton.hidden = false;
     applyWorkspacePreferences();
 
-    const pairCount = Math.max(state.source.tables.length, state.target.tables.length);
+    const pairCount = getTableCount();
     if (state.activeTableIndex >= pairCount) state.activeTableIndex = 0;
     renderTabs(pairCount);
     renderActiveTables();
@@ -355,38 +364,68 @@
   }
 
   function renderTabs(pairCount) {
-    dom.tableTabs.replaceChildren();
-    for (let index = 0; index < pairCount; index += 1) {
-      const sourceTable = state.source.tables[index];
-      const targetTable = state.target.tables[index];
-      const relatedCount = state.annotations.filter((annotation) => annotation.tableIndex === index).length;
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `tab-button${index === state.activeTableIndex ? " active" : ""}`;
-      button.textContent = sourceTable?.name || targetTable?.name || `Table ${index + 1}`;
-      if (relatedCount) {
-        const count = document.createElement("span");
-        count.className = "tab-count";
-        count.textContent = relatedCount;
-        button.append(count);
-      }
-      button.addEventListener("click", () => {
-        state.activeTableIndex = index;
-        resetPendingSelection(false);
-        renderTabs(pairCount);
-        renderActiveTables();
-        persistWorkspace();
-      });
-      dom.tableTabs.append(button);
+    const tableNumber = state.activeTableIndex + 1;
+    const isSaved = Boolean(state.savedTables[state.activeTableIndex]);
+    dom.currentTableLabel.textContent = `Table ${tableNumber} of ${pairCount}`;
+    dom.currentTableLabel.classList.toggle("saved", isSaved);
+    dom.previousTableButton.disabled = state.activeTableIndex === 0;
+    dom.nextTableButton.disabled = state.activeTableIndex >= pairCount - 1;
+    updateSaveControls();
+  }
+
+  function goToTable(index) {
+    const pairCount = getTableCount();
+    if (index < 0 || index >= pairCount || index === state.activeTableIndex) return;
+    if (!state.savedTables[state.activeTableIndex]) {
+      requireCurrentTableSave();
+      return;
     }
+    state.activeTableIndex = index;
+    resetPendingSelection();
+    renderTabs(pairCount);
+    renderActiveTables();
+    renderAnnotationList();
+    updateAnnotationCount();
+    persistWorkspace();
+  }
+
+  function requireCurrentTableSave() {
+    const tableNumber = state.activeTableIndex + 1;
+    showToast(`Save Table ${tableNumber} before moving to another table.`);
+    dom.saveTableButton.classList.add("needs-attention");
+    dom.saveTableButton.focus({ preventScroll: true });
+    window.setTimeout(() => dom.saveTableButton.classList.remove("needs-attention"), 1800);
+  }
+
+  function goToNextUnsavedTable() {
+    if (!state.source || !state.target) return;
+    if (!state.savedTables[state.activeTableIndex]) {
+      requireCurrentTableSave();
+      return;
+    }
+
+    const tableCount = getTableCount();
+    const unsavedIndexes = Array.from(
+      { length: tableCount },
+      (_, index) => index
+    ).filter((index) => !state.savedTables[index]);
+    if (!unsavedIndexes.length) {
+      showToast("All tables are saved.");
+      return;
+    }
+
+    const nextIndex = unsavedIndexes.find((index) => index > state.activeTableIndex) ?? unsavedIndexes[0];
+    goToTable(nextIndex);
   }
 
   function renderActiveTables() {
     const index = state.activeTableIndex;
     const sourceTable = state.source.tables[index];
     const targetTable = state.target.tables[index];
-    dom.sourceTableTitle.textContent = sourceTable?.name || "No matching source table";
-    dom.targetTableTitle.textContent = targetTable?.name || "No matching target table";
+    const tableLabel = `Table ${index + 1}`;
+    dom.sourcePanelLabel.textContent = APP_CONFIG.enableSourceEditing ? "SOURCE" : "SOURCE · READ ONLY";
+    dom.sourceTableTitle.textContent = tableLabel;
+    dom.targetTableTitle.textContent = tableLabel;
     dom.sourceRowCount.textContent = pluralize(sourceTable?.rows.length || 0, "row");
     dom.targetRowCount.textContent = pluralize(targetTable?.rows.length || 0, "row");
     renderTable(dom.sourceTableContainer, sourceTable, "source", index);
@@ -431,7 +470,8 @@
       row.forEach((value, columnIndex) => {
         const column = table.columns[columnIndex];
         const td = document.createElement("td");
-        td.className = "selectable-cell";
+        const isEditable = side === "target" || APP_CONFIG.enableSourceEditing;
+        td.className = isEditable ? "selectable-cell" : "read-only-cell";
         td.dataset.side = side;
         td.dataset.tableIndex = tableIndex;
         td.dataset.rowIndex = rowIndex;
@@ -545,9 +585,10 @@
       errorCategory: dom.categorySelect.value,
       createdAt: new Date().toISOString()
     });
+    markTableUnsaved(pending.tableIndex);
     window.getSelection()?.removeAllRanges();
     resetPendingSelection(false);
-    renderTabs(Math.max(state.source.tables.length, state.target.tables.length));
+    renderTabs(getTableCount());
     renderActiveTables();
     renderAnnotationList();
     updateAnnotationCount();
@@ -569,16 +610,19 @@
 
   function renderAnnotationList() {
     dom.annotationList.replaceChildren();
-    dom.clearAnnotationsButton.hidden = state.annotations.length === 0;
-    if (!state.annotations.length) {
+    const currentAnnotations = state.annotations.filter(
+      (annotation) => annotation.tableIndex === state.activeTableIndex
+    );
+    dom.clearAnnotationsButton.hidden = currentAnnotations.length === 0;
+    if (!currentAnnotations.length) {
       const empty = document.createElement("div");
       empty.className = "annotation-empty";
-      empty.textContent = "No errors marked yet. Select text in either table to create an annotation.";
+      empty.textContent = `No errors marked for Table ${state.activeTableIndex + 1}.`;
       dom.annotationList.append(empty);
       return;
     }
 
-    [...state.annotations].reverse().forEach((annotation) => {
+    [...currentAnnotations].reverse().forEach((annotation) => {
       const item = document.createElement("article");
       item.className = "annotation-item";
 
@@ -588,7 +632,7 @@
 
       const location = document.createElement("span");
       location.className = "annotation-location";
-      location.textContent = `${annotation.tableName} · Row ${annotation.rowIndex + 1} · ${annotation.columnLabel}`;
+      location.textContent = `Table ${annotation.tableIndex + 1} · Row ${annotation.rowIndex + 1} · ${annotation.columnLabel}`;
 
       const quote = document.createElement("span");
       quote.className = "annotation-quote";
@@ -613,8 +657,10 @@
   }
 
   function deleteAnnotation(id) {
+    const removed = state.annotations.find((annotation) => annotation.id === id);
     state.annotations = state.annotations.filter((annotation) => annotation.id !== id);
-    renderTabs(Math.max(state.source.tables.length, state.target.tables.length));
+    if (removed) markTableUnsaved(removed.tableIndex);
+    renderTabs(getTableCount());
     renderActiveTables();
     renderAnnotationList();
     updateAnnotationCount();
@@ -623,18 +669,24 @@
   }
 
   function clearAnnotations() {
-    if (!window.confirm("Remove all annotations from this workspace?")) return;
-    state.annotations = [];
-    renderTabs(Math.max(state.source.tables.length, state.target.tables.length));
+    const tableIndex = state.activeTableIndex;
+    if (!window.confirm(`Remove all annotations from Table ${tableIndex + 1}?`)) return;
+    state.annotations = state.annotations.filter((annotation) => annotation.tableIndex !== tableIndex);
+    markTableUnsaved(tableIndex);
+    renderTabs(getTableCount());
     renderActiveTables();
     renderAnnotationList();
     updateAnnotationCount();
     persistWorkspace();
-    showToast("All annotations cleared.");
+    showToast(`Annotations cleared from Table ${tableIndex + 1}.`);
   }
 
   function updateAnnotationCount() {
-    dom.annotationCount.textContent = state.annotations.length;
+    const count = state.annotations.filter(
+      (annotation) => annotation.tableIndex === state.activeTableIndex
+    ).length;
+    dom.annotationCount.textContent = count;
+    dom.annotationTableLabel.textContent = `Table ${state.activeTableIndex + 1}`;
   }
 
   function buildExport() {
@@ -644,6 +696,10 @@
       sourceFile: state.source.fileName,
       targetFile: state.target.fileName,
       annotationCount: state.annotations.length,
+      tableReviewStatus: Array.from({ length: getTableCount() }, (_, index) => ({
+        tableNumber: index + 1,
+        savedAt: state.savedTables[index] || null
+      })),
       annotations: state.annotations.map((annotation) => ({
         id: annotation.id,
         side: annotation.side,
@@ -666,7 +722,10 @@
   }
 
   function downloadAnnotations() {
-    if (!state.source || !state.target) return;
+    if (!state.source || !state.target || !allTablesSaved()) {
+      showToast("Save every table before downloading the final JSON.");
+      return;
+    }
     const payload = JSON.stringify(buildExport(), null, 2);
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -683,8 +742,6 @@
 
   function persistWorkspace(immediate = false) {
     if (!state.source || !state.target) return;
-    dom.saveStatus.classList.add("saving");
-    dom.saveStatusText.textContent = "Saving…";
     window.clearTimeout(saveTimer);
 
     const save = () => {
@@ -695,15 +752,12 @@
           source: state.source,
           target: state.target,
           annotations: state.annotations,
+          savedTables: state.savedTables,
           activeTableIndex: state.activeTableIndex,
           tableFontSize: state.tableFontSize,
           splitPercent: state.splitPercent
         }));
-        dom.saveStatus.classList.remove("saving");
-        dom.saveStatusText.textContent = "Saved locally";
       } catch (_error) {
-        dom.saveStatus.classList.remove("saving");
-        dom.saveStatusText.textContent = "Browser storage is full";
         showToast("Could not autosave: browser storage is full.");
       }
     };
@@ -720,6 +774,9 @@
       state.source = cached.source;
       state.target = cached.target;
       state.annotations = Array.isArray(cached.annotations) ? cached.annotations : [];
+      state.savedTables = cached.savedTables && typeof cached.savedTables === "object"
+        ? cached.savedTables
+        : {};
       state.activeTableIndex = Number.isInteger(cached.activeTableIndex) ? cached.activeTableIndex : 0;
       state.tableFontSize = [10, 12, 14, 16, 20].includes(cached.tableFontSize) ? cached.tableFontSize : 12;
       state.splitPercent = Number.isFinite(cached.splitPercent) ? cached.splitPercent : 50;
@@ -728,7 +785,6 @@
         persistWorkspace(true);
         localStorage.removeItem(LEGACY_STORAGE_KEY);
       }
-      dom.saveStatusText.textContent = "Restored from browser";
       showToast("Previous workspace restored.");
       return true;
     } catch (_error) {
@@ -736,6 +792,60 @@
       localStorage.removeItem(LEGACY_STORAGE_KEY);
       return false;
     }
+  }
+
+  function getTableCount() {
+    if (!state.source || !state.target) return 0;
+    return Math.max(state.source.tables.length, state.target.tables.length);
+  }
+
+  function saveCurrentTable() {
+    if (!state.source || !state.target) return;
+    const tableIndex = state.activeTableIndex;
+    const annotationCount = state.annotations.filter(
+      (annotation) => annotation.tableIndex === tableIndex
+    ).length;
+    state.savedTables[tableIndex] = new Date().toISOString();
+    persistWorkspace(true);
+    renderTabs(getTableCount());
+    showToast(annotationCount
+      ? `Table ${tableIndex + 1} saved with ${pluralize(annotationCount, "annotation")}.`
+      : `Table ${tableIndex + 1} saved — no errors marked.`);
+  }
+
+  function markTableUnsaved(tableIndex) {
+    if (state.savedTables[tableIndex]) delete state.savedTables[tableIndex];
+  }
+
+  function allTablesSaved() {
+    const tableCount = getTableCount();
+    return tableCount > 0 && Array.from(
+      { length: tableCount },
+      (_, index) => Boolean(state.savedTables[index])
+    ).every(Boolean);
+  }
+
+  function updateSaveControls() {
+    const hasWorkspace = Boolean(state.source && state.target);
+    const isCurrentSaved = hasWorkspace && Boolean(state.savedTables[state.activeTableIndex]);
+    const tableCount = hasWorkspace ? getTableCount() : 0;
+    const savedCount = Array.from(
+      { length: tableCount },
+      (_, index) => Boolean(state.savedTables[index])
+    ).filter(Boolean).length;
+    dom.saveTableButton.disabled = !hasWorkspace || isCurrentSaved;
+    dom.saveTableButton.textContent = isCurrentSaved
+      ? `Table ${state.activeTableIndex + 1} saved`
+      : `Save table ${state.activeTableIndex + 1}`;
+    dom.downloadAllButton.disabled = !hasWorkspace || !allTablesSaved();
+    dom.downloadAllButton.title = allTablesSaved()
+      ? "Download all annotations"
+      : "Save every table to enable the final download";
+    dom.reviewProgressLabel.textContent = `Saved ${savedCount} / ${tableCount}`;
+    dom.findUnsavedButton.disabled = !hasWorkspace || savedCount === tableCount;
+    dom.findUnsavedButton.title = savedCount === tableCount
+      ? "Every table has been saved"
+      : "Jump to the next unsaved table";
   }
 
   function applyWorkspacePreferences() {
@@ -807,26 +917,27 @@
   }
 
   function clearSession() {
-    if (state.source && !window.confirm("Clear the current files, annotations, and saved browser session?")) return;
+    if (
+      state.source &&
+      !window.confirm("Do you really want to clear this session? All your annotations will be lost.")
+    ) return;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(LEGACY_STORAGE_KEY);
     state.source = null;
     state.target = null;
     state.annotations = [];
+    state.savedTables = {};
     state.activeTableIndex = 0;
     state.pendingSelection = null;
     state.tableFontSize = 12;
     state.splitPercent = 50;
     resetPendingSelection();
     renderEmptyState();
-    dom.saveStatus.classList.remove("saving");
-    dom.saveStatusText.textContent = "No active session";
     showToast("Browser session cleared.");
   }
 
   function formatSelectionLocation(selection) {
-    const table = state[selection.side].tables[selection.tableIndex];
-    return `${selection.side.toUpperCase()} · ${table?.name || `Table ${selection.tableIndex + 1}`} · Row ${selection.rowIndex + 1} · ${selection.columnLabel} · chars ${selection.startOffset}–${selection.endOffset}`;
+    return `${selection.side.toUpperCase()} · Table ${selection.tableIndex + 1} · Row ${selection.rowIndex + 1} · ${selection.columnLabel} · chars ${selection.startOffset}–${selection.endOffset}`;
   }
 
   function formatBytes(bytes) {
