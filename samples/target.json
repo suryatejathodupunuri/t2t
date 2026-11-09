@@ -1,0 +1,20 @@
+{
+  "tables": [
+    {
+      "name": "Quarterly Sales",
+      "rows": [
+        { "Region": "North", "Product": "Desk lamp", "Quarter": "Q1", "Revenue": "$12,400" },
+        { "Region": "South", "Product": "Floor Lamp", "Quarter": "Q2", "Revenue": "$9,850" },
+        { "Region": "West", "Product": "Reading Light", "Quarter": "Q1", "Revenue": "$15,2000" }
+      ]
+    },
+    {
+      "name": "Team Directory",
+      "rows": [
+        { "Name": "Amina Patel", "Role": "Researcher Lead", "Location": "London" },
+        { "Name": "Jon Bell", "Role": "Product Designer", "Location": "New York City" },
+        { "Name": "Mei Tan", "Role": "Data Analyst", "Location": "Singapore" }
+      ]
+    }
+  ]
+}
