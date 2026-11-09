@@ -1,39 +1,51 @@
 # Table2Table Translation
 
-A local-first, single-page source-to-target table annotation tool.
+A buildless, browser-based tool for comparing source and target tables and annotating errors in target-table text.
 
-## Run
+## Features
 
-From `/scratch/suryateja.t`, run:
+- Upload source and target JSON files or use the included samples
+- Review any table in any order with **Previous** and **Next**
+- Mark each table as **SAVED** or **UNSAVED**
+- Save a reviewed table even when it contains no errors
+- Resume work from the same browser using `localStorage`
+- Download one JSON file after every table has been saved
+
+## Requirements
+
+- Git
+- Python 3, or any other local static-file server
+- A modern web browser
+
+There are no packages or dependencies to install.
+
+## Clone and run
 
 ```bash
+git clone https://github.com/suryatejathodupunuri/t2t.git
+cd t2t
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000/t2t/`.
+Open `http://localhost:8000` in your browser.
 
-The page can also be opened directly as `index.html`; the sample button has an embedded fallback for browsers that block local JSON fetches.
+Use a local server instead of opening `index.html` directly because the app loads its categories and samples from JSON files.
 
-## Workspace controls
+## Configuration
 
-- Upload source and target JSON directly, or proceed with the included samples
-- Move through numbered tables with **Previous** and **Next**
-- Save the current table before navigating away; the app prompts you if it is still unsaved
-- See **SAVED** or **UNSAVED**, track `Saved X / N`, and use **Find unsaved** to locate unfinished tables
-- Change table text size from 10 to 20 pixels
-- Drag the center divider to resize the source and target views
-- Select target-table text and assign an error category
-- View annotation logs for the current table only
-- Save each table individually as a completed review checkpoint
-- Save a table with zero annotations to confirm that it was reviewed and contains no errors
-- Download the final JSON only after every table has been saved
-- Clear the browser session from the top navigation
+Edit `error-categories.json` to change the dropdown values:
 
-Browser autosave remains active in the background. If an annotation is added, removed, or cleared after a table is saved, that table immediately becomes **UNSAVED** and must be saved again before you can leave it.
+```json
+{
+  "categories": [
+    "Incorrect value",
+    "Missing content",
+    "Other"
+  ]
+}
+```
 
-## Source editing configuration
-
-Source-table span selection is disabled by default. To allow annotations on both sides, edit the configuration near the top of `app.js`:
+Source-table selection is disabled by default. To enable annotations on both source and target tables, change this setting near the top of `app.js`:
 
 ```js
 const APP_CONFIG = {
@@ -41,14 +53,21 @@ const APP_CONFIG = {
 };
 ```
 
-Use `false` for target-only annotation or `true` to enable source annotation.
+## Supported table JSON
 
-## Supported JSON shapes
+The source and target uploads support:
 
-- An array of objects (one table)
-- An array of arrays (one table, generated column names)
+- An array of objects
+- An array of arrays
 - `{ "rows": [...] }` or `{ "data": [...] }`
 - `{ "tables": [{ "name": "...", "rows": [...] }] }`
 - An object whose values are named row arrays
 
-Annotations, imported tables, table review checkpoints, text size, and split position are autosaved to `localStorage` in the same browser. **Download all** exports every annotation with its span, category, table, row, column, and character offsets.
+## Saving and export
+
+Browser autosave stores imported tables, annotations, review states, text size, and split position in `localStorage` on the same browser.
+
+Users can move between tables freely. Adding, removing, or clearing an annotation changes that table to **UNSAVED**. Saving a table with no annotations confirms that it was reviewed and has no errors.
+
+**Download all** becomes available only after every table is saved. The exported JSON contains annotation spans, selected text, categories, table numbers, rows, columns, and character offsets.
+

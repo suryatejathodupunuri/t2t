@@ -83,7 +83,6 @@ svg {
 }
 .button:hover:not(:disabled) { background: var(--soft); }
 .button:disabled { cursor: not-allowed; opacity: 0.4; }
-.button.needs-attention { outline: 2px solid var(--ink); outline-offset: 3px; }
 .button-primary { background: var(--ink); color: var(--white); }
 .button-primary:hover:not(:disabled) { background: #383838; }
 .button-ghost { border-color: var(--line-dark); }
@@ -233,7 +232,6 @@ main { min-height: calc(100vh - 56px); }
   white-space: nowrap;
 }
 .review-progress span { color: var(--ink); font-weight: 750; }
-.review-progress button:disabled { cursor: not-allowed; opacity: 0.4; }
 .font-controls { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.65rem; }
 .size-options { display: flex; border: 1px solid var(--line-dark); }
 .size-options button {

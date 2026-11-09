@@ -1,0 +1,12 @@
+{
+  "categories": [
+    "Incorrect value",
+    "Missing content",
+    "Extra content",
+    "Formatting",
+    "Spelling or grammar",
+    "Alignment",
+    "Duplicate",
+    "Other"
+  ]
+}
